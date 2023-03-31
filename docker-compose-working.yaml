@@ -1,0 +1,65 @@
+version: '3.7'
+
+services:
+
+  db:
+    image: postgres
+    command: -c 'config_file=/etc/postgresql/postgresql.conf'
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: admin
+      POSTGRES_USER: admin
+      POSTGRES_DB: example
+    # not needed for networking between containers but here for troubleshooting
+    ports:
+      - "5432:5432"
+    configs:
+      - source: postgresql
+        target: /etc/postgresql/postgresql.conf
+
+  kafka:
+    container_name: kafka
+    image: quay.io/strimzi/kafka:latest-kafka-3.4.0-amd64
+    command:
+      [
+        "sh",
+        "-c",
+        "export CLUSTER_ID=$$(bin/kafka-storage.sh random-uuid) && bin/kafka-storage.sh format --ignore-formatted -t $$CLUSTER_ID -c config/kraft/server.properties && bin/kafka-server-start.sh config/kraft/server.properties --override advertised.listeners=$${KAFKA_ADVERTISED_LISTENERS} --override listener.security.protocol.map=$${KAFKA_LISTENER_SECURITY_PROTOCOL_MAP} --override listeners=$${KAFKA_LISTENERS}",
+      ]
+    ports:
+      - "9092:9092"
+    environment:
+      LOG_DIR: "/tmp/logs"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://:29092,PLAINTEXT_HOST://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+
+  debezium:
+    container_name: debezium
+    image: quay.io/debezium/connect:2.1.1.Final
+    restart: "no"
+    ports:
+      - "8083:8083"
+    environment:
+      GROUP_ID: 1
+      BOOTSTRAP_SERVERS: kafka:29092
+      CONFIG_STORAGE_TOPIC: my_connect_configs
+      OFFSET_STORAGE_TOPIC: my_connect_offsets
+      STATUS_STORAGE_TOPIC: my_connect_statuses
+    links:
+      - "kafka"
+      - "db"
+    depends_on:
+      - "db"
+    configs:
+      - source: dbz-custom-smt-jar
+        # This is a weird place to add the JAR, but it's currently necessary. See the following links for background:
+        # https://issues.apache.org/jira/browse/KAFKA-6007
+        # https://stackoverflow.com/questions/46712095/using-a-custom-converter-with-kafka-connect
+        target: /kafka/connect/debezium-connector-postgres/example-transform-0.0.1-SNAPSHOT.jar
+
+configs:
+  postgresql:
+     file: ./postgresql.conf
+  dbz-custom-smt-jar:
+     file: ./dbz-extra-classes/example-transform-0.0.1-SNAPSHOT.jar

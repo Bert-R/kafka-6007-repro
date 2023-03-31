@@ -1,0 +1,23 @@
+plugins {
+	id 'java'
+}
+
+group = 'example.repro'
+version = '0.0.1-SNAPSHOT'
+sourceCompatibility = '11'
+targetCompatibility = '11'
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.apache.kafka:connect-api:3.3.1'
+}
+
+task copyJar(type: Copy) {
+    from jar
+    into 'dbz-extra-classes'
+}
+
+build.dependsOn copyJar
